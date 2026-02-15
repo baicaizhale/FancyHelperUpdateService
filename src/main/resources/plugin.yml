@@ -1,5 +1,5 @@
 name: FancyHelperUpdateService
-version: 'v1.0.0-SNAPSHOT'
+version: 1.0.0
 main: org.YanPl.fancyHelperUpdateService.FancyHelperUpdateService
 api-version: '1.18'
 load: STARTUP
