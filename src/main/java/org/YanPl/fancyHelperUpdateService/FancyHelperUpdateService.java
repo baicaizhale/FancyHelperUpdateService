@@ -211,32 +211,40 @@ public final class FancyHelperUpdateService extends JavaPlugin {
                 removeFromCollection(field.getName(), value, pluginName);
             }
             
-            // 获取SimplePluginManager (field name: pluginManager)
-            Field pluginManagerField = paperPluginManager.getClass().getDeclaredField("pluginManager");
-            pluginManagerField.setAccessible(true);
-            Object simplePluginManager = pluginManagerField.get(paperPluginManager);
-            
-            // 清理SimplePluginManager中的providers
-            for (Field field : simplePluginManager.getClass().getDeclaredFields()) {
-                field.setAccessible(true);
-                Object value = field.get(simplePluginManager);
-                removeFromCollection(field.getName(), value, pluginName);
-            }
-            
-            // 尝试清理providerStorage
+            // 尝试获取并清理SimplePluginManager (可能不存在于所有版本)
             try {
-                Field providerStorageField = simplePluginManager.getClass().getDeclaredField("providerStorage");
-                providerStorageField.setAccessible(true);
-                Object providerStorage = providerStorageField.get(simplePluginManager);
+                Field pluginManagerField = paperPluginManager.getClass().getDeclaredField("pluginManager");
+                pluginManagerField.setAccessible(true);
+                Object simplePluginManager = pluginManagerField.get(paperPluginManager);
                 
-                // providerStorage可能是SingularRuntimePluginProviderStorage
-                for (Field field : providerStorage.getClass().getDeclaredFields()) {
-                    field.setAccessible(true);
-                    Object value = field.get(providerStorage);
-                    removeFromCollection(field.getName(), value, pluginName);
+                if (simplePluginManager != null) {
+                    // 清理SimplePluginManager中的providers
+                    for (Field field : simplePluginManager.getClass().getDeclaredFields()) {
+                        field.setAccessible(true);
+                        Object value = field.get(simplePluginManager);
+                        removeFromCollection(field.getName(), value, pluginName);
+                    }
+                    
+                    // 尝试清理providerStorage
+                    try {
+                        Field providerStorageField = simplePluginManager.getClass().getDeclaredField("providerStorage");
+                        providerStorageField.setAccessible(true);
+                        Object providerStorage = providerStorageField.get(simplePluginManager);
+                        
+                        // providerStorage可能是SingularRuntimePluginProviderStorage
+                        if (providerStorage != null) {
+                            for (Field field : providerStorage.getClass().getDeclaredFields()) {
+                                field.setAccessible(true);
+                                Object value = field.get(providerStorage);
+                                removeFromCollection(field.getName(), value, pluginName);
+                            }
+                        }
+                    } catch (NoSuchFieldException e) {
+                        getLogger().fine("未找到providerStorage字段");
+                    }
                 }
             } catch (NoSuchFieldException e) {
-                getLogger().info("未找到providerStorage字段");
+                getLogger().fine("未找到pluginManager字段，跳过该步骤");
             }
             
             // 尝试清理ServerPluginProviderStorage中的providers
@@ -334,8 +342,10 @@ public final class FancyHelperUpdateService extends JavaPlugin {
                     }
                 }
             }
+        } catch (NoSuchFieldException e) {
+            getLogger().fine("未找到entrypointHandler字段，跳过该步骤");
         } catch (Exception e) {
-            getLogger().warning("清理ServerPluginProviderStorage时出错: " + e.getMessage());
+            getLogger().fine("清理ServerPluginProviderStorage时出错: " + e.getMessage());
         }
     }
 }
