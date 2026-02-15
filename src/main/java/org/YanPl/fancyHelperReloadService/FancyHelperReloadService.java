@@ -1,7 +1,6 @@
 package org.YanPl.fancyHelperReloadService;
 
 import org.bukkit.Bukkit;
-import org.bukkit.ChatColor;
 import org.bukkit.plugin.Plugin;
 import org.bukkit.plugin.java.JavaPlugin;
 
@@ -25,14 +24,14 @@ public final class FancyHelperReloadService extends JavaPlugin {
     private void startReloadTask() {
         new Thread(() -> {
             try {
-                Thread.sleep(3000);
+                Thread.sleep(1000);
                 
                 Plugin fancyHelper = Bukkit.getPluginManager().getPlugin("FancyHelper");
                 if (fancyHelper != null) {
                     Bukkit.getPluginManager().disablePlugin(fancyHelper);
                 }
                 
-                Thread.sleep(2000);
+                Thread.sleep(1000);
                 
                 cleanupRemappedFiles();
                 cleanupPaperPluginRegistry("FancyHelper");
@@ -54,18 +53,13 @@ public final class FancyHelperReloadService extends JavaPlugin {
                 
                 File targetJar = jarFiles[0];
                 
-                // 发送天蓝色消息
-                Bukkit.broadcastMessage(ChatColor.AQUA + "正在重载FancyHelper");
                 
                 Plugin loadedPlugin = Bukkit.getPluginManager().loadPlugin(targetJar);
                 if (loadedPlugin != null) {
                     Bukkit.getPluginManager().enablePlugin(loadedPlugin);
                 }
                 
-                Thread.sleep(2000);
-                
-                // 发送天蓝色消息
-                Bukkit.broadcastMessage(ChatColor.AQUA + "重载完成");
+                Thread.sleep(1000);
                 
                 Bukkit.getScheduler().runTask(this, () -> {
                     Bukkit.getPluginManager().disablePlugin(this);

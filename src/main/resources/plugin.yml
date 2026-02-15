@@ -1,6 +1,5 @@
 name: FancyHelperReloadService
-version: 'v1.0.0-SNAPSHOT'
+version: SNAPSHOT
 main: org.YanPl.fancyHelperReloadService.FancyHelperReloadService
 api-version: '1.18'
-load: STARTUP
 authors: [ YanPl ]
