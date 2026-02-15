@@ -26,6 +26,9 @@ public final class FancyHelperReloadService extends JavaPlugin {
             try {
                 Thread.sleep(1000);
                 
+                // 首先清理自身的 remapped 文件，避免重复加载问题
+                cleanupSelfRemappedFiles();
+                
                 Plugin fancyHelper = Bukkit.getPluginManager().getPlugin("FancyHelper");
                 if (fancyHelper != null) {
                     Bukkit.getPluginManager().disablePlugin(fancyHelper);
@@ -35,6 +38,11 @@ public final class FancyHelperReloadService extends JavaPlugin {
                 
                 cleanupRemappedFiles();
                 cleanupPaperPluginRegistry("FancyHelper");
+                // 同时清理自身的注册信息，防止重复标识符错误
+                cleanupPaperPluginRegistry("FancyHelperReloadService");
+                // 清理 ServerPluginProviderStorage 中的重复提供者
+                cleanupDuplicateProviders("FancyHelper");
+                cleanupDuplicateProviders("FancyHelperReloadService");
                 
                 File pluginsDir = new File("plugins");
                 if (!pluginsDir.exists() || !pluginsDir.isDirectory()) {
@@ -71,6 +79,33 @@ public final class FancyHelperReloadService extends JavaPlugin {
                 // 忽略所有异常
             }
         }, "FancyHelperReloadService-ReloadThread").start();
+    }
+    
+    /**
+     * 清理 FancyHelperReloadService 自身的 remapped 缓存文件
+     * 这是解决 "duplicate plugin identifier" 错误的关键步骤
+     */
+    private void cleanupSelfRemappedFiles() {
+        try {
+            File remappedDir = new File("plugins/.paper-remapped");
+            if (remappedDir.exists() && remappedDir.isDirectory()) {
+                File[] subDirs = remappedDir.listFiles(File::isDirectory);
+                if (subDirs != null) {
+                    for (File subDir : subDirs) {
+                        File[] files = subDir.listFiles((dir, name) -> 
+                            name.contains("FancyHelperReloadService")
+                        );
+                        if (files != null) {
+                            for (File f : files) {
+                                deleteRecursively(f);
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            // 忽略
+        }
     }
     
     private void cleanupRemappedFiles() {
@@ -236,6 +271,116 @@ public final class FancyHelperReloadService extends JavaPlugin {
                         }
                     }
                 }
+            }
+        } catch (Exception e) {
+            // 忽略
+        }
+    }
+    
+    /**
+     * 直接清理 ServerPluginProviderStorage 中的重复插件提供者
+     * 这是解决 "attempted to add duplicate plugin identifier" 错误的关键方法
+     */
+    private void cleanupDuplicateProviders(String pluginName) {
+        try {
+            Class<?> paperPluginManagerClass = Class.forName("io.papermc.paper.plugin.manager.PaperPluginManagerImpl");
+            java.lang.reflect.Method getInstanceMethod = paperPluginManagerClass.getMethod("getInstance");
+            Object paperPluginManager = getInstanceMethod.invoke(null);
+            
+            if (paperPluginManager == null) return;
+            
+            Field instanceManagerField = paperPluginManager.getClass().getDeclaredField("instanceManager");
+            instanceManagerField.setAccessible(true);
+            Object instanceManager = instanceManagerField.get(paperPluginManager);
+            
+            if (instanceManager == null) return;
+            
+            // 尝试访问 ServerPluginProviderStorage
+            Class<?> serverPluginProviderStorageClass = Class.forName("io.papermc.paper.plugin.storage.ServerPluginProviderStorage");
+            
+            // 查找 instanceManager 中的 providerStorage 字段
+            for (Field field : instanceManager.getClass().getDeclaredFields()) {
+                field.setAccessible(true);
+                Object fieldValue = field.get(instanceManager);
+                
+                if (fieldValue != null && serverPluginProviderStorageClass.isInstance(fieldValue)) {
+                    // 找到了 ServerPluginProviderStorage，清理其中的 providers
+                    for (Field storageField : serverPluginProviderStorageClass.getDeclaredFields()) {
+                        storageField.setAccessible(true);
+                        Object storageValue = storageField.get(fieldValue);
+                        removeProviderFromCollection(storageValue, pluginName);
+                    }
+                }
+            }
+        } catch (Exception e) {
+            // 忽略
+        }
+    }
+    
+    /**
+     * 从提供者集合中移除指定插件名称的提供者
+     */
+    @SuppressWarnings("unchecked")
+    private void removeProviderFromCollection(Object collection, String pluginName) {
+        try {
+            if (collection instanceof Map) {
+                Map<Object, Object> map = (Map<Object, Object>) collection;
+                Iterator<Map.Entry<Object, Object>> iterator = map.entrySet().iterator();
+                while (iterator.hasNext()) {
+                    Map.Entry<Object, Object> entry = iterator.next();
+                    Object key = entry.getKey();
+                    Object value = entry.getValue();
+                    
+                    // 检查 key 是否包含插件名
+                    String keyStr = safeToString(key);
+                    if (keyStr.contains(pluginName)) {
+                        iterator.remove();
+                        continue;
+                    }
+                    
+                    // 检查 value 中的插件描述
+                    if (value != null) {
+                        try {
+                            // 尝试获取 PluginDescriptionFile
+                            Field descriptionField = value.getClass().getDeclaredField("description");
+                            descriptionField.setAccessible(true);
+                            Object description = descriptionField.get(value);
+                            if (description != null) {
+                                String descStr = safeToString(description);
+                                if (descStr.contains(pluginName)) {
+                                    iterator.remove();
+                                    continue;
+                                }
+                            }
+                        } catch (NoSuchFieldException e) {
+                            // 尝试其他方式
+                            String valueStr = safeToString(value);
+                            if (valueStr.contains(pluginName)) {
+                                iterator.remove();
+                            }
+                        }
+                    }
+                }
+            } else if (collection instanceof Collection) {
+                Collection<Object> col = (Collection<Object>) collection;
+                col.removeIf(obj -> {
+                    String str = safeToString(obj);
+                    if (str.contains(pluginName)) return true;
+                    
+                    // 尝试检查 description 字段
+                    try {
+                        Field descriptionField = obj.getClass().getDeclaredField("description");
+                        descriptionField.setAccessible(true);
+                        Object description = descriptionField.get(obj);
+                        if (description != null) {
+                            String descStr = safeToString(description);
+                            return descStr.contains(pluginName);
+                        }
+                    } catch (Exception e) {
+                        // 忽略
+                    }
+                    return false;
+                });
             }
         } catch (Exception e) {
             // 忽略
